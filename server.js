@@ -360,10 +360,40 @@ app.post('/api/batch-download', async (req, res) => {
   });
 });
 
+// Helper: Clean up job files after ZIP download
+function cleanupJobFiles(jobId) {
+  const job = batchJobs.get(jobId);
+  if (!job) {
+    console.log('⚠️ Job not found for cleanup:', jobId);
+    return;
+  }
+
+  console.log('🧹 Starting cleanup for job:', jobId);
+
+  // Delete entire temp directory
+  if (fs.existsSync(job.tempDir)) {
+    try {
+      fs.rm(job.tempDir, { recursive: true, force: true }, (err) => {
+        if (err) {
+          console.error('❌ Error deleting temp folder:', err.message);
+        } else {
+          console.log('✅ Temp folder permanently deleted:', job.tempDir);
+        }
+      });
+    } catch (err) {
+      console.error('❌ Error during cleanup:', err.message);
+    }
+  }
+
+  // Remove from memory
+  batchJobs.delete(jobId);
+  console.log('🧹 Job removed from memory:', jobId);
+}
+
 // POST /api/batch-download/:jobId/download - Download ZIP when ready
 app.get('/api/batch-download/:jobId/download', async (req, res) => {
   const job = batchJobs.get(req.params.jobId);
-  
+
   if (!job) {
     return res.status(404).json({ error: 'Job not found' });
   }
@@ -377,21 +407,16 @@ app.get('/api/batch-download/:jobId/download', async (req, res) => {
   }
 
   console.log('📤 Sending ZIP file to client');
-  
+
   res.download(job.zipPath, `youtube_audio_batch_${job.jobId}.zip`, (err) => {
     if (err) {
       console.error('❌ Error sending file:', err.message);
+    } else {
+      console.log('✅ ZIP file sent successfully');
     }
-    // Clean up after download
-    setTimeout(() => {
-      if (fs.existsSync(job.tempDir)) {
-        fs.rm(job.tempDir, { recursive: true, force: true }, (cleanupErr) => {
-          if (cleanupErr) console.error('Error cleaning up:', cleanupErr.message);
-          else console.log('🧹 Cleaned up job', job.jobId);
-        });
-      }
-      batchJobs.delete(job.jobId);
-    }, 2000);
+
+    // Clean up ALL temp files immediately after download
+    cleanupJobFiles(job.jobId);
   });
 });
 
@@ -507,12 +532,18 @@ async function processBatchJobWithQueue(jobId) {
       job.status = 'error';
       job.logs.push({ type: 'error', message: '❌ No files downloaded successfully' });
       console.error(`❌ Job ${jobId} failed: No files downloaded\n`);
+      
+      // Clean up failed job files
+      setTimeout(() => cleanupJobFiles(jobId), 5000);
     }
 
   } catch (error) {
     job.status = 'error';
     job.logs.push({ type: 'error', message: `❌ Fatal error: ${error.message}` });
     console.error(`❌ Job ${jobId} fatal error:`, error.message, '\n');
+    
+    // Clean up failed job files
+    setTimeout(() => cleanupJobFiles(jobId), 5000);
   }
 }
 
@@ -591,12 +622,18 @@ async function processBatchJob(jobId) {
       job.status = 'error';
       job.logs.push({ type: 'error', message: '❌ No files were downloaded successfully' });
       console.error(`❌ Job ${jobId} failed: No files downloaded\n`);
+      
+      // Clean up failed job files
+      setTimeout(() => cleanupJobFiles(jobId), 5000);
     }
 
   } catch (error) {
     job.status = 'error';
     job.logs.push({ type: 'error', message: `❌ Fatal error: ${error.message}` });
     console.error(`❌ Job ${jobId} fatal error:`, error.message, '\n');
+    
+    // Clean up failed job files
+    setTimeout(() => cleanupJobFiles(jobId), 5000);
   }
 }
 
@@ -745,12 +782,22 @@ function createZipFile(files, outputPath) {
   });
 }
 
-// POST /api/batch-cancel/:jobId - Cancel batch job
+// POST /api/batch-cancel/:jobId - Cancel batch job and cleanup
 app.post('/api/batch-cancel/:jobId', (req, res) => {
   const job = batchJobs.get(req.params.jobId);
   if (job) {
     job.status = 'cancelled';
     job.logs.push({ type: 'error', message: 'Job cancelled by user' });
+    console.log('🧹 Cancelling job and cleaning up:', req.params.jobId);
+    
+    // Clean up temp files for cancelled jobs
+    if (fs.existsSync(job.tempDir)) {
+      fs.rm(job.tempDir, { recursive: true, force: true }, (err) => {
+        if (err) console.error('❌ Error cleaning cancelled job:', err.message);
+        else console.log('✅ Cancelled job temp files deleted:', job.tempDir);
+      });
+    }
+    batchJobs.delete(req.params.jobId);
     res.json({ status: 'cancelled' });
   } else {
     res.status(404).json({ error: 'Job not found' });
