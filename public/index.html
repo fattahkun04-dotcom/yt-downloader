@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YouTube Audio Downloader</title>
+    <link rel="stylesheet" href="style.css">
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>🎵 YouTube Audio Downloader</h1>
+            <p class="subtitle">Download YouTube videos as MP3 files</p>
+        </header>
+
+        <main>
+            <!-- Tab Navigation -->
+            <div class="tabs">
+                <button class="tab-btn active" data-tab="single">🎵 Single Download</button>
+                <button class="tab-btn" data-tab="batch">📦 Batch Download</button>
+            </div>
+
+            <!-- Single Download Tab -->
+            <div id="singleTab" class="tab-content active">
+                <div class="input-section">
+                    <label for="videoUrl">Enter YouTube Video URL:</label>
+                    <div class="input-group">
+                        <input 
+                            type="text" 
+                            id="videoUrl" 
+                            placeholder="https://www.youtube.com/watch?v=..." 
+                            autocomplete="off"
+                        >
+                        <button id="checkInfoBtn" class="btn btn-primary">Check Info</button>
+                    </div>
+                    <p id="urlError" class="error-message"></p>
+                </div>
+
+                <div id="loading" class="loading hidden">
+                    <div class="spinner"></div>
+                    <p>Fetching video information...</p>
+                </div>
+
+                <div id="videoInfo" class="video-info hidden">
+                    <div class="info-card">
+                        <img id="videoThumbnail" src="" alt="Video Thumbnail" class="thumbnail">
+                        <div class="info-details">
+                            <h2 id="videoTitle"></h2>
+                            <div class="info-row">
+                                <span class="label">Author:</span>
+                                <span id="videoAuthor" class="value"></span>
+                            </div>
+                            <div class="info-row">
+                                <span class="label">Duration:</span>
+                                <span id="videoDuration" class="value"></span>
+                            </div>
+                            <button id="downloadBtn" class="btn btn-success">
+                                ⬇ Download MP3
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Batch Download Tab -->
+            <div id="batchTab" class="tab-content">
+                <div class="input-section">
+                    <h3 class="section-title">📦 Batch Download</h3>
+                    <p class="section-desc">Upload a text file containing YouTube URLs (one per line)</p>
+                    
+                    <div class="upload-area" id="uploadArea">
+                        <div class="upload-icon">📁</div>
+                        <p class="upload-text">Drag & drop a text file here</p>
+                        <p class="upload-or">or</p>
+                        <label class="btn btn-primary upload-btn">
+                            Choose File
+                            <input type="file" id="batchFileInput" accept=".txt,.csv,.list" hidden>
+                        </label>
+                        <p class="upload-hint">Supported formats: .txt, .csv, .list</p>
+                    </div>
+
+                    <!-- Or paste URLs directly -->
+                    <div class="paste-section">
+                        <p class="section-divider">— OR —</p>
+                        <label for="batchUrls">Paste URLs directly (one per line):</label>
+                        <textarea 
+                            id="batchUrls" 
+                            placeholder="https://www.youtube.com/watch?v=...
+https://www.youtube.com/watch?v=...
+https://www.youtube.com/watch?v=..."
+                            rows="5"
+                        ></textarea>
+                        <button id="startBatchBtn" class="btn btn-success btn-large">
+                            🚀 Start Batch Download
+                        </button>
+                        <p class="batch-note">⚠️ Note: Batch download may take a while. For best results, use single download for large files.</p>
+                    </div>
+                </div>
+
+                <!-- Batch Progress -->
+                <div id="batchProgress" class="batch-progress hidden">
+                    <div class="progress-header">
+                        <h3>📊 Download Progress</h3>
+                        <button id="cancelBatchBtn" class="btn btn-small btn-danger">Cancel</button>
+                    </div>
+                    
+                    <div class="progress-bar-container">
+                        <div class="progress-bar" id="progressBar"></div>
+                    </div>
+                    
+                    <div class="progress-stats">
+                        <span id="progressText">0 / 0 completed</span>
+                        <span id="progressPercent">0%</span>
+                    </div>
+
+                    <div id="batchLog" class="batch-log">
+                        <!-- Log entries will appear here -->
+                    </div>
+                </div>
+            </div>
+
+            <div id="downloadLoading" class="loading hidden">
+                <div class="spinner"></div>
+                <p>Converting and downloading audio...</p>
+            </div>
+
+            <div id="errorMessage" class="error-box hidden">
+                <p id="errorText"></p>
+                <button id="closeError" class="btn btn-small">Close</button>
+            </div>
+        </main>
+
+        <footer>
+            <p class="note">⚠️ Note: This tool is for personal use only. Respect copyright laws.</p>
+            <p class="ffmpeg-note">Make sure FFmpeg is installed on your system!</p>
+        </footer>
+    </div>
+
+    <script src="script.js"></script>
+</body>
+</html>
