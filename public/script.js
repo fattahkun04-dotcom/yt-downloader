@@ -8,11 +8,13 @@ const videoAuthor = document.getElementById('videoAuthor');
 const videoDuration = document.getElementById('videoDuration');
 const videoThumbnail = document.getElementById('videoThumbnail');
 const downloadBtn = document.getElementById('downloadBtn');
+const downloadFormat = document.getElementById('downloadFormat');
 const downloadLoading = document.getElementById('downloadLoading');
 const errorMessage = document.getElementById('errorMessage');
 const errorText = document.getElementById('errorText');
 const closeErrorBtn = document.getElementById('closeError');
 const urlError = document.getElementById('urlError');
+const transcriptBtn = document.getElementById('transcriptBtn'); // Added
 
 // Batch download elements
 const batchFileInput = document.getElementById('batchFileInput');
@@ -25,34 +27,27 @@ const progressPercent = document.getElementById('progressPercent');
 const batchLog = document.getElementById('batchLog');
 const cancelBatchBtn = document.getElementById('cancelBatchBtn');
 const uploadArea = document.getElementById('uploadArea');
+const playlistUrlInput = document.getElementById('playlistUrl'); // Added
+const extractPlaylistBtn = document.getElementById('extractPlaylistBtn'); // Added
 
 // Validate YouTube URL format
 function isValidYouTubeUrl(url) {
-    const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]{11}/;
-    return pattern.test(url.trim());
+    if (!url || typeof url !== 'string') return false;
+
+    const match = url.trim().match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+    return Boolean(match && match[1]);
 }
 
 // Clean YouTube URL - extract just the video ID
 function cleanYouTubeUrl(url) {
-    url = url.trim();
-    
-    // Match various YouTube URL formats and extract video ID
-    const patterns = [
-        /youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/,  // Standard watch URL
-        /youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/,     // Embed URL
-        /youtube\.com\/v\/([a-zA-Z0-9_-]{11})/,         // Old embed URL
-        /youtube\.com\/shorts\/([a-zA-Z0-9_-]{11})/,    // Shorts URL
-        /youtu\.be\/([a-zA-Z0-9_-]{11})/                // Short URL
-    ];
-    
-    for (const pattern of patterns) {
-        const match = url.match(pattern);
-        if (match) {
-            return `https://www.youtube.com/watch?v=${match[1]}`;
-        }
+    const trimmedUrl = url.trim();
+
+    const match = trimmedUrl.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+    if (match && match[1]) {
+        return `https://www.youtube.com/watch?v=${match[1]}`;
     }
-    
-    return url;
+
+    return trimmedUrl;
 }
 
 // Show/hide loading
@@ -70,11 +65,13 @@ function showDownloadLoading(show) {
     if (show) {
         downloadLoading.classList.remove('hidden');
         downloadBtn.disabled = true;
-        downloadBtn.textContent = '⏳ Converting...';
+        downloadBtn.innerHTML = '<i data-lucide="loader" class="spin-icon"></i> Converting...';
+        if (window.lucide) lucide.createIcons({ root: downloadBtn });
     } else {
         downloadLoading.classList.add('hidden');
         downloadBtn.disabled = false;
-        downloadBtn.textContent = '⬇ Download MP3';
+        downloadBtn.innerHTML = '<i data-lucide="download"></i> Download MP3';
+        if (window.lucide) lucide.createIcons({ root: downloadBtn });
     }
 }
 
@@ -149,12 +146,25 @@ async function fetchVideoInfo() {
     }
 }
 
-// Download audio as MP3
-async function downloadAudio() {
+// Download selected audio or video format
+async function downloadSelectedMedia() {
     const url = downloadBtn.dataset.url;
+    const format = downloadFormat.value;
 
     if (!url) {
         showError('No video URL available for download');
+        return;
+    }
+
+    const downloadUrl = `/api/download?url=${encodeURIComponent(url)}&format=${encodeURIComponent(format)}`;
+
+    if (format === 'video') {
+        const downloadLink = document.createElement('a');
+        downloadLink.href = downloadUrl;
+        downloadLink.download = '';
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        downloadLink.remove();
         return;
     }
 
@@ -163,9 +173,6 @@ async function downloadAudio() {
     hideError();
 
     try {
-        // Create download URL
-        const downloadUrl = `/api/download?url=${encodeURIComponent(url)}`;
-        
         // Fetch the file as a blob
         const response = await fetch(downloadUrl);
         
@@ -211,10 +218,71 @@ async function downloadAudio() {
     }
 }
 
+// Download Transcript
+async function downloadTranscript() {
+    const url = downloadBtn.dataset.url;
+    if (!url) {
+        showError('No video URL available');
+        return;
+    }
+
+    transcriptBtn.disabled = true;
+    const originalHtml = transcriptBtn.innerHTML;
+    transcriptBtn.innerHTML = '<i data-lucide="loader" class="spin-icon"></i> Fetching...';
+    if (window.lucide) lucide.createIcons({ root: transcriptBtn });
+    hideError();
+
+    try {
+        const downloadUrl = `/api/transcript?url=${encodeURIComponent(url)}`;
+        const response = await fetch(downloadUrl);
+        
+        if (!response.ok) {
+            const errorData = await response.json().catch(() => ({ error: 'Transcript failed' }));
+            throw new Error(errorData.error || 'Failed to fetch transcript (may not exist)');
+        }
+        
+        const blob = await response.blob();
+        
+        const contentDisposition = response.headers.get('Content-Disposition');
+        let filename = 'transcript.srt';
+        if (contentDisposition) {
+            const filenameMatch = contentDisposition.match(/filename="?(.+?)"?$/i);
+            if (filenameMatch && filenameMatch[1]) {
+                filename = decodeURIComponent(filenameMatch[1]);
+            }
+        }
+        
+        const downloadLink = document.createElement('a');
+        downloadLink.href = URL.createObjectURL(blob);
+        downloadLink.download = filename;
+        document.body.appendChild(downloadLink);
+        downloadLink.click();
+        document.body.removeChild(downloadLink);
+        
+        setTimeout(() => URL.revokeObjectURL(downloadLink.href), 1000);
+        
+    } catch (error) {
+        console.error('❌ Transcript error:', error);
+        showError(error.message);
+    } finally {
+        transcriptBtn.disabled = false;
+        transcriptBtn.innerHTML = originalHtml;
+        if (window.lucide) lucide.createIcons({ root: transcriptBtn });
+    }
+}
+
 // Event Listeners
 checkInfoBtn.addEventListener('click', fetchVideoInfo);
 
-downloadBtn.addEventListener('click', downloadAudio);
+downloadBtn.addEventListener('click', downloadSelectedMedia);
+if(transcriptBtn) transcriptBtn.addEventListener('click', downloadTranscript);
+
+downloadFormat.addEventListener('change', () => {
+    downloadBtn.innerHTML = downloadFormat.value === 'video'
+        ? '<i data-lucide="download"></i> Download MP4'
+        : '<i data-lucide="download"></i> Download MP3';
+    if (window.lucide) lucide.createIcons({ root: downloadBtn });
+});
 
 closeErrorBtn.addEventListener('click', hideError);
 
@@ -264,14 +332,22 @@ function addLogEntry(message, type = 'processing') {
     const entry = document.createElement('div');
     entry.className = `log-entry ${type}`;
     
-    const icon = type === 'success' ? '✅' : type === 'error' ? '❌' : '⏳';
+    let iconName = 'loader';
+    if (type === 'success') iconName = 'check-circle';
+    if (type === 'error') iconName = 'x-circle';
     
     entry.innerHTML = `
-        <span class="log-icon">${icon}</span>
+        <i data-lucide="${iconName}" class="log-icon"></i>
         <span class="log-text">${message}</span>
     `;
     
     batchLog.appendChild(entry);
+    // Re-initialize icons for the new elements
+    if (window.lucide) {
+        lucide.createIcons({
+            root: entry
+        });
+    }
     batchLog.scrollTop = batchLog.scrollHeight;
 }
 
@@ -535,3 +611,59 @@ cancelBatchBtn.addEventListener('click', async () => {
         cancelBatchBtn.disabled = true;
     }
 });
+
+// Extract Playlist
+if (extractPlaylistBtn) {
+    extractPlaylistBtn.addEventListener('click', async () => {
+        const url = playlistUrlInput.value.trim();
+        if (!url) {
+            alert('Please enter a playlist URL');
+            return;
+        }
+
+        extractPlaylistBtn.disabled = true;
+        const originalHtml = extractPlaylistBtn.innerHTML;
+        extractPlaylistBtn.innerHTML = '<i data-lucide="loader" class="spin-icon"></i> Extracting...';
+        if (window.lucide) lucide.createIcons({ root: extractPlaylistBtn });
+
+        try {
+            const response = await fetch(`/api/playlist?url=${encodeURIComponent(url)}`);
+            const data = await response.json();
+
+            if (!response.ok) {
+                throw new Error(data.error || 'Failed to extract playlist');
+            }
+
+            if (data.urls && data.urls.length > 0) {
+                const currentUrls = batchUrlsInput.value ? batchUrlsInput.value + '\n' : '';
+                batchUrlsInput.value = currentUrls + data.urls.join('\n');
+                playlistUrlInput.value = '';
+                
+                // Show temporary success feedback
+                extractPlaylistBtn.innerHTML = '<i data-lucide="check"></i> Added ' + data.urls.length + ' URLs!';
+                extractPlaylistBtn.classList.add('btn-success');
+                extractPlaylistBtn.classList.remove('btn-outline');
+                if (window.lucide) lucide.createIcons({ root: extractPlaylistBtn });
+                
+                setTimeout(() => {
+                    extractPlaylistBtn.innerHTML = originalHtml;
+                    extractPlaylistBtn.classList.remove('btn-success');
+                    extractPlaylistBtn.classList.add('btn-outline');
+                    extractPlaylistBtn.disabled = false;
+                    if (window.lucide) lucide.createIcons({ root: extractPlaylistBtn });
+                }, 3000);
+                return;
+            } else {
+                throw new Error('No valid URLs found in playlist');
+            }
+
+        } catch (error) {
+            console.error('Playlist extraction error:', error);
+            alert(error.message);
+        }
+
+        extractPlaylistBtn.disabled = false;
+        extractPlaylistBtn.innerHTML = originalHtml;
+        if (window.lucide) lucide.createIcons({ root: extractPlaylistBtn });
+    });
+}

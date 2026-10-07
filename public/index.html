@@ -3,60 +3,95 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>YouTube Audio Downloader</title>
+    <title>YT Media Downloader</title>
+    <!-- Google Fonts: Plus Jakarta Sans for a premium, geometric look -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Lucide Icons for professional SVGs -->
+    <script src="https://unpkg.com/lucide@latest"></script>
     <link rel="stylesheet" href="style.css">
 </head>
 <body>
+    <!-- Background glowing orbs for depth -->
+    <div class="bg-orb orb-1"></div>
+    <div class="bg-orb orb-2"></div>
+
     <div class="container">
         <header>
-            <h1>🎵 YouTube Audio Downloader</h1>
-            <p class="subtitle">Download YouTube videos as MP3 files</p>
+            <div class="logo-wrapper">
+                <i data-lucide="headphones" class="logo-icon"></i>
+            </div>
+            <h1>YT Media Downloader</h1>
+            <p class="subtitle">Download video or extract high-quality audio from YouTube.</p>
         </header>
 
-        <main>
+        <main class="glass-panel">
             <!-- Tab Navigation -->
             <div class="tabs">
-                <button class="tab-btn active" data-tab="single">🎵 Single Download</button>
-                <button class="tab-btn" data-tab="batch">📦 Batch Download</button>
+                <button class="tab-btn active" data-tab="single">
+                    <i data-lucide="music"></i> Single Download
+                </button>
+                <button class="tab-btn" data-tab="batch">
+                    <i data-lucide="layers"></i> Batch Download
+                </button>
             </div>
 
             <!-- Single Download Tab -->
             <div id="singleTab" class="tab-content active">
                 <div class="input-section">
-                    <label for="videoUrl">Enter YouTube Video URL:</label>
+                    <label for="videoUrl">Video URL</label>
                     <div class="input-group">
-                        <input 
-                            type="text" 
-                            id="videoUrl" 
-                            placeholder="https://www.youtube.com/watch?v=..." 
-                            autocomplete="off"
-                        >
-                        <button id="checkInfoBtn" class="btn btn-primary">Check Info</button>
+                        <div class="input-wrapper">
+                            <i data-lucide="link" class="input-icon"></i>
+                            <input 
+                                type="text" 
+                                id="videoUrl" 
+                                placeholder="Paste youtube link here..." 
+                                autocomplete="off"
+                            >
+                        </div>
+                        <button id="checkInfoBtn" class="btn btn-primary">
+                            <i data-lucide="search"></i> Fetch
+                        </button>
                     </div>
                     <p id="urlError" class="error-message"></p>
                 </div>
 
                 <div id="loading" class="loading hidden">
                     <div class="spinner"></div>
-                    <p>Fetching video information...</p>
+                    <p>Fetching video details...</p>
                 </div>
 
                 <div id="videoInfo" class="video-info hidden">
                     <div class="info-card">
-                        <img id="videoThumbnail" src="" alt="Video Thumbnail" class="thumbnail">
+                        <div class="thumbnail-wrapper">
+                            <img id="videoThumbnail" src="" alt="Thumbnail" class="thumbnail">
+                            <div class="duration-badge" id="videoDuration"></div>
+                        </div>
                         <div class="info-details">
                             <h2 id="videoTitle"></h2>
-                            <div class="info-row">
-                                <span class="label">Author:</span>
-                                <span id="videoAuthor" class="value"></span>
+                            <div class="info-meta">
+                                <span class="meta-item">
+                                    <i data-lucide="user"></i>
+                                    <span id="videoAuthor"></span>
+                                </span>
                             </div>
-                            <div class="info-row">
-                                <span class="label">Duration:</span>
-                                <span id="videoDuration" class="value"></span>
+                            <div class="download-options">
+                                <label for="downloadFormat">Download format</label>
+                                <select id="downloadFormat">
+                                    <option value="audio">Audio MP3</option>
+                                    <option value="video">Video MP4 (up to 1080p 60 fps)</option>
+                                </select>
                             </div>
-                            <button id="downloadBtn" class="btn btn-success">
-                                ⬇ Download MP3
-                            </button>
+                            <div class="btn-group" style="display: flex; gap: 12px; margin-top: 12px;">
+                                <button id="downloadBtn" class="btn btn-success" style="flex: 2; margin-top: 0;">
+                                    <i data-lucide="download"></i> Download MP3
+                                </button>
+                                <button id="transcriptBtn" class="btn btn-outline" style="flex: 1; margin-top: 0;" title="Download transcript/subtitles if available">
+                                    <i data-lucide="file-text"></i> Transcript
+                                </button>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -65,43 +100,65 @@
             <!-- Batch Download Tab -->
             <div id="batchTab" class="tab-content">
                 <div class="input-section">
-                    <h3 class="section-title">📦 Batch Download</h3>
-                    <p class="section-desc">Upload a text file containing YouTube URLs (one per line)</p>
+                    <div class="batch-header">
+                        <i data-lucide="file-text" class="section-icon"></i>
+                        <div>
+                            <h3 class="section-title">Batch Processing</h3>
+                            <p class="section-desc">Download multiple audios at once via a text file or manual entry.</p>
+                        </div>
+                    </div>
                     
                     <div class="upload-area" id="uploadArea">
-                        <div class="upload-icon">📁</div>
-                        <p class="upload-text">Drag & drop a text file here</p>
+                        <i data-lucide="upload-cloud" class="upload-icon"></i>
+                        <p class="upload-text">Drag & drop a list file here</p>
                         <p class="upload-or">or</p>
-                        <label class="btn btn-primary upload-btn">
-                            Choose File
+                        <label class="btn btn-outline upload-btn">
+                            Browse Files
                             <input type="file" id="batchFileInput" accept=".txt,.csv,.list" hidden>
                         </label>
-                        <p class="upload-hint">Supported formats: .txt, .csv, .list</p>
+                        <p class="upload-hint">Supported: .txt, .csv, .list (one URL per line)</p>
+                    </div>
+
+                    <!-- Extract Playlist -->
+                    <div class="playlist-section">
+                        <div class="divider"><span>OR EXTRACT PLAYLIST</span></div>
+                        <div class="input-group mb-3">
+                            <div class="input-wrapper">
+                                <i data-lucide="list-video" class="input-icon"></i>
+                                <input type="text" id="playlistUrl" placeholder="Paste YouTube Playlist URL..." autocomplete="off">
+                            </div>
+                            <button id="extractPlaylistBtn" class="btn btn-outline">
+                                <i data-lucide="cloud-lightning"></i> Extract
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Or paste URLs directly -->
                     <div class="paste-section">
-                        <p class="section-divider">— OR —</p>
-                        <label for="batchUrls">Paste URLs directly (one per line):</label>
-                        <textarea 
-                            id="batchUrls" 
-                            placeholder="https://www.youtube.com/watch?v=...
-https://www.youtube.com/watch?v=...
-https://www.youtube.com/watch?v=..."
-                            rows="5"
-                        ></textarea>
-                        <button id="startBatchBtn" class="btn btn-success btn-large">
-                            🚀 Start Batch Download
+                        <div class="divider"><span>OR PASTE URLS</span></div>
+                        <div class="textarea-wrapper">
+                            <textarea 
+                                id="batchUrls" 
+                                placeholder="URLs will appear here...&#10;https://www.youtube.com/watch?v=..."
+                                rows="4"
+                            ></textarea>
+                        </div>
+                        <button id="startBatchBtn" class="btn btn-success btn-large mt-3">
+                            <i data-lucide="zap"></i> Start Batch Download
                         </button>
-                        <p class="batch-note">⚠️ Note: Batch download may take a while. For best results, use single download for large files.</p>
                     </div>
                 </div>
 
                 <!-- Batch Progress -->
                 <div id="batchProgress" class="batch-progress hidden">
                     <div class="progress-header">
-                        <h3>📊 Download Progress</h3>
-                        <button id="cancelBatchBtn" class="btn btn-small btn-danger">Cancel</button>
+                        <div class="progress-title">
+                            <i data-lucide="activity"></i>
+                            <h3>Processing Queue</h3>
+                        </div>
+                        <button id="cancelBatchBtn" class="btn btn-small btn-danger">
+                            <i data-lucide="x"></i> Cancel
+                        </button>
                     </div>
                     
                     <div class="progress-bar-container">
@@ -121,21 +178,29 @@ https://www.youtube.com/watch?v=..."
 
             <div id="downloadLoading" class="loading hidden">
                 <div class="spinner"></div>
-                <p>Converting and downloading audio...</p>
+                <p>Converting audio...</p>
             </div>
 
             <div id="errorMessage" class="error-box hidden">
-                <p id="errorText"></p>
-                <button id="closeError" class="btn btn-small">Close</button>
+                <i data-lucide="alert-circle" class="error-icon"></i>
+                <div class="error-content">
+                    <p id="errorText"></p>
+                </div>
+                <button id="closeError" class="btn btn-icon btn-ghost">
+                    <i data-lucide="x"></i>
+                </button>
             </div>
         </main>
 
         <footer>
-            <p class="note">⚠️ Note: This tool is for personal use only. Respect copyright laws.</p>
-            <p class="ffmpeg-note">Make sure FFmpeg is installed on your system!</p>
+            <p class="note">For personal use only. Respect copyright laws.</p>
         </footer>
     </div>
 
     <script src="script.js"></script>
+    <script>
+        // Initialize Lucide icons
+        lucide.createIcons();
+    </script>
 </body>
 </html>

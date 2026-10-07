@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const { spawn, execSync } = require('child_process');
+const os = require('os');
 const path = require('path');
 const fs = require('fs');
 const archiver = require('archiver');
@@ -10,8 +11,6 @@ const PORT = process.env.PORT || 3000;
 
 // Find yt-dlp executable
 function getYtDlpPath() {
-  const { execSync } = require('child_process');
-  
   const candidates = [
     'yt-dlp',
     'yt-dlp.exe',
@@ -46,8 +45,10 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // Validate YouTube URL
 function isValidUrl(url) {
-  const pattern = /^(https?:\/\/)?(www\.)?(youtube\.com\/(watch\?v=|embed\/|v\/|shorts\/)|youtu\.be\/)[a-zA-Z0-9_-]{11}/;
-  return pattern.test(url);
+  if (!url || typeof url !== 'string') return false;
+
+  const match = url.match(/(?:https?:\/\/)?(?:www\.)?(?:youtube\.com\/(?:watch\?(?:.*&)?v=|embed\/|v\/|shorts\/)|youtu\.be\/)([a-zA-Z0-9_-]{11})/i);
+  return Boolean(match && match[1]);
 }
 
 // Format duration from seconds to HH:MM:SS or MM:SS
@@ -68,14 +69,27 @@ function sanitizeFilename(filename) {
   return filename.replace(/[<>:"/\\|?*]/g, '').trim().substring(0, 200);
 }
 
+function getFirefoxCookieArgs() {
+  const profilesDir = path.join(process.env.APPDATA || '', 'Mozilla', 'Firefox', 'Profiles');
+
+  try {
+    const hasCookieDatabase = fs.readdirSync(profilesDir, { withFileTypes: true }).some((profile) =>
+      profile.isDirectory() && fs.existsSync(path.join(profilesDir, profile.name, 'cookies.sqlite'))
+    );
+    return hasCookieDatabase ? ['--cookies-from-browser', 'firefox'] : [];
+  } catch (e) {
+    return [];
+  }
+}
+
 // Helper function to run yt-dlp
 function runYtDlp(args) {
   return new Promise((resolve, reject) => {
     // Add JavaScript runtime flag - using node (Node.js)
-    // Add cookies from Firefox browser to avoid bot detection
     const finalArgs = [
       '--js-runtimes', 'node',
-      '--cookies-from-browser', 'firefox',
+      '--no-update',
+      ...getFirefoxCookieArgs(),
       ...args
     ];
     console.log('🔧 Running:', YTDLP_PATH, finalArgs.join(' '));
@@ -201,6 +215,7 @@ app.get('/api/info', async (req, res) => {
 // GET /api/download - Download audio as MP3 stream using yt-dlp
 app.get('/api/download', async (req, res) => {
   const { url } = req.query;
+  const downloadVideo = req.query.format === 'video';
 
   if (!url) {
     return res.status(400).json({ error: 'URL parameter is required' });
@@ -211,7 +226,7 @@ app.get('/api/download', async (req, res) => {
   }
 
   try {
-    console.log('🎵 Starting download for:', url);
+    console.log(downloadVideo ? '🎬 Starting video download for:' : '🎵 Starting audio download for:', url);
     
     // First, get video info for filename
     const infoArgs = ['--dump-json', '--no-playlist', url];
@@ -223,6 +238,65 @@ app.get('/api/download', async (req, res) => {
 
     console.log('📄 Filename:', filename);
 
+    if (downloadVideo) {
+      const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'yt-downloader-'));
+      const downloadArgs = [
+        '--js-runtimes', 'node',
+        '--no-update',
+        ...getFirefoxCookieArgs(),
+        '--format', 'bestvideo[height=1080][fps>=59]+bestaudio/best[height=1080][fps>=59]/bestvideo[height<=1080][fps<=60]+bestaudio/best[height<=1080][fps<=60]',
+        '--merge-output-format', 'mp4',
+        '--remux-video', 'mp4',
+        '--output', path.join(tempDir, 'video.%(ext)s'),
+        '--no-playlist',
+        url
+      ];
+      const ytDlp = spawn(YTDLP_PATH, downloadArgs, {
+        windowsHide: true,
+        timeout: 300000,
+        env: { ...process.env }
+      });
+      let errorMsg = '';
+      let didTimeout = false;
+
+      ytDlp.stderr.on('data', (data) => {
+        errorMsg += data.toString();
+      });
+
+      ytDlp.on('error', (error) => {
+        fs.rm(tempDir, { recursive: true, force: true }, () => {});
+        if (!res.headersSent) {
+          res.status(500).json({ error: `Failed to start video download: ${error.message}` });
+        }
+      });
+
+      ytDlp.on('close', (code) => {
+        const videoPath = path.join(tempDir, 'video.mp4');
+        if (code !== 0 || !fs.existsSync(videoPath)) {
+          fs.rm(tempDir, { recursive: true, force: true }, () => {});
+          if (!res.headersSent) {
+            res.status(didTimeout ? 504 : 500).json({
+              error: didTimeout ? 'Video download timed out.' : 'Video download failed.',
+              details: process.env.NODE_ENV === 'development' ? errorMsg : undefined
+            });
+          }
+          return;
+        }
+
+        res.download(videoPath, `${title}.mp4`, (error) => {
+          fs.rm(tempDir, { recursive: true, force: true }, () => {});
+          if (error) console.error('❌ Video response error:', error.message);
+        });
+      });
+
+      ytDlp.on('timeout', () => {
+        didTimeout = true;
+        ytDlp.kill();
+      });
+
+      return;
+    }
+
     // Set response headers
     res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(filename)}"`);
     res.setHeader('Content-Type', 'audio/mpeg');
@@ -230,6 +304,9 @@ app.get('/api/download', async (req, res) => {
 
     // Use yt-dlp to download and convert to MP3, streaming to stdout
     const downloadArgs = [
+      '--js-runtimes', 'node',
+      '--no-update',
+      ...getFirefoxCookieArgs(),
       '--format', 'bestaudio/best',
       '--extract-audio',
       '--audio-format', 'mp3',
@@ -239,7 +316,7 @@ app.get('/api/download', async (req, res) => {
       url
     ];
 
-    const ytDlp = spawn('yt-dlp', downloadArgs, {
+    const ytDlp = spawn(YTDLP_PATH, downloadArgs, {
       windowsHide: true,
       timeout: 300000 // 5 minutes timeout for download
     });
@@ -293,6 +370,106 @@ app.get('/api/download', async (req, res) => {
       }
       res.status(500).json({ error: 'Failed to download audio. Please try again.' });
     }
+  }
+});
+
+// GET /api/transcript - Download audio transcript (subtitles)
+app.get('/api/transcript', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) return res.status(400).json({ error: 'URL parameter is required' });
+  if (!isValidUrl(url)) return res.status(400).json({ error: 'Invalid YouTube URL' });
+
+  const tempSubDir = path.join(__dirname, 'temp', `sub_${Date.now()}`);
+  fs.mkdirSync(tempSubDir, { recursive: true });
+
+  try {
+    console.log('📝 Fetching transcript for:', url);
+    const subArgs = [
+      '--js-runtimes', 'node',
+      ...getFirefoxCookieArgs(),
+      '--write-auto-subs',
+      '--write-subs',
+      '--sub-langs', 'id,en,en-US',
+      '--sub-format', 'vtt/srt/best',
+      '--skip-download',
+      '--no-playlist',
+      '-o', path.join(tempSubDir, '%(title)s.%(ext)s'),
+      url
+    ];
+
+    const ytDlp = spawn(YTDLP_PATH, subArgs, { windowsHide: true, timeout: 60000 });
+
+    ytDlp.on('close', (code) => {
+      let sent = false;
+      if (code === 0) {
+        if (fs.existsSync(tempSubDir)) {
+          const files = fs.readdirSync(tempSubDir);
+          const subFile = files.find(f => f.endsWith('.vtt') || f.endsWith('.srt'));
+          if (subFile) {
+            const filePath = path.join(tempSubDir, subFile);
+            res.download(filePath, subFile, (err) => {
+              // Cleanup after download
+              fs.rm(tempSubDir, { recursive: true, force: true }, () => {});
+            });
+            sent = true;
+          }
+        }
+      }
+      
+      if (!sent) {
+        if (!res.headersSent) res.status(404).json({ error: 'No transcript/subtitles found for this video.' });
+        fs.rm(tempSubDir, { recursive: true, force: true }, () => {});
+      }
+    });
+
+    ytDlp.on('error', () => {
+      if (!res.headersSent) res.status(500).json({ error: 'Failed to fetch transcript.' });
+      fs.rm(tempSubDir, { recursive: true, force: true }, () => {});
+    });
+
+  } catch (error) {
+    console.error('❌ Transcript error:', error.message);
+    if (!res.headersSent) res.status(500).json({ error: 'Internal server error.' });
+    fs.rm(tempSubDir, { recursive: true, force: true }, () => {});
+  }
+});
+
+// GET /api/playlist - Extract URLs from a playlist
+app.get('/api/playlist', async (req, res) => {
+  const { url } = req.query;
+
+  if (!url) return res.status(400).json({ error: 'URL parameter is required' });
+
+  try {
+    console.log('📋 Fetching playlist for:', url);
+    const args = [
+      '--flat-playlist',
+      '--dump-json',
+      url
+    ];
+    
+    const output = await runYtDlp(args);
+    const lines = output.trim().split('\n');
+    const urls = [];
+    
+    for (const line of lines) {
+      if (!line) continue;
+      try {
+        const item = JSON.parse(line);
+        if (item.url) urls.push(item.url);
+        else if (item.id) urls.push(`https://www.youtube.com/watch?v=${item.id}`);
+      } catch (e) {}
+    }
+    
+    if (urls.length === 0) {
+      return res.status(404).json({ error: 'No videos found in this playlist' });
+    }
+    
+    res.json({ urls });
+  } catch (error) {
+    console.error('❌ Playlist error:', error.message);
+    res.status(500).json({ error: 'Failed to extract playlist. Make sure the playlist is public.' });
   }
 });
 
@@ -465,13 +642,13 @@ async function processBatchJobWithQueue(jobId) {
 
         try {
           // Get video info
-          const info = await getVideoInfoAsync(url);
+          const info = await getVideoInfoAsync(url, job);
           const title = sanitizeFilename(info.title || `audio_${globalIndex + 1}`);
           const filename = `${String(globalIndex + 1).padStart(3, '0')}_${title}.mp3`;
           const filepath = path.join(tempDir, filename);
 
           // Download audio
-          await downloadAudioAsync(url, filepath);
+          await downloadAudioAsync(url, filepath, job);
 
           if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
             job.downloadedFiles.push({ path: filepath, name: filename });
@@ -572,7 +749,7 @@ async function processBatchJob(jobId) {
 
       try {
         // Get video info
-        const info = await getVideoInfoAsync(url);
+        const info = await getVideoInfoAsync(url, job);
         const title = sanitizeFilename(info.title || `audio_${i + 1}`);
         const filename = `${String(i + 1).padStart(3, '0')}_${title}.mp3`;
         const filepath = path.join(tempDir, filename);
@@ -583,7 +760,7 @@ async function processBatchJob(jobId) {
         job.logs.push({ type: 'processing', message: `Converting: ${filename}` });
 
         // Download audio
-        await downloadAudioAsync(url, filepath);
+        await downloadAudioAsync(url, filepath, job);
 
         if (fs.existsSync(filepath) && fs.statSync(filepath).size > 0) {
           job.downloadedFiles.push({ path: filepath, name: filename });
@@ -638,11 +815,11 @@ async function processBatchJob(jobId) {
 }
 
 // Helper: Get video info async
-function getVideoInfoAsync(url) {
+function getVideoInfoAsync(url, job) {
   return new Promise((resolve, reject) => {
     const proc = spawn(YTDLP_PATH, [
       '--js-runtimes', 'node',
-      '--cookies-from-browser', 'firefox',
+      ...getFirefoxCookieArgs(),
       '--dump-json',
       '--no-playlist',
       url
@@ -650,6 +827,8 @@ function getVideoInfoAsync(url) {
       windowsHide: true,
       timeout: 120000
     });
+
+    if (job) job.activeProcess = proc;
 
     let stdout = '';
     let stderr = '';
@@ -674,7 +853,7 @@ function getVideoInfoAsync(url) {
 }
 
 // Helper: Download audio async
-function downloadAudioAsync(url, outputPath) {
+function downloadAudioAsync(url, outputPath, job) {
   return new Promise((resolve, reject) => {
     const tempDir = path.dirname(outputPath);
     const expectedFilename = path.basename(outputPath);
@@ -685,7 +864,7 @@ function downloadAudioAsync(url, outputPath) {
     // Use exact filename with --output flag
     const proc = spawn(YTDLP_PATH, [
       '--js-runtimes', 'node',
-      '--cookies-from-browser', 'firefox',
+      ...getFirefoxCookieArgs(),
       '--format', 'bestaudio',
       '--extract-audio',
       '--audio-format', 'mp3',
@@ -698,6 +877,8 @@ function downloadAudioAsync(url, outputPath) {
       timeout: 300000,
       cwd: tempDir
     });
+
+    if (job) job.activeProcess = proc;
 
     let stderr = '';
     let stdout = '';
@@ -789,6 +970,14 @@ app.post('/api/batch-cancel/:jobId', (req, res) => {
     job.status = 'cancelled';
     job.logs.push({ type: 'error', message: 'Job cancelled by user' });
     console.log('🧹 Cancelling job and cleaning up:', req.params.jobId);
+
+    // Stop running yt-dlp process to prevent zombie process
+    if (job.activeProcess) {
+      try {
+        job.activeProcess.kill();
+        console.log('🛑 Killed active yt-dlp process');
+      } catch (e) { /* ignore error on kill */ }
+    }
     
     // Clean up temp files for cancelled jobs
     if (fs.existsSync(job.tempDir)) {

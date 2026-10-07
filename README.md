@@ -1,11 +1,12 @@
-# YouTube Audio Downloader
+# YouTube Media Downloader
 
-A simple web application to download YouTube videos as MP3 audio files.
+A simple web application to download YouTube videos as MP4 or extract audio as MP3.
 
 ## Features
 
 - ✅ Fetch video information (title, duration, author, thumbnail)
 - ✅ Download audio directly as MP3 format
+- ✅ Download video as MP4, prioritizing 1080p at 60 fps when available
 - ✅ No server-side file storage (direct streaming)
 - ✅ Modern, responsive dark theme UI
 - ✅ Error handling for common issues
@@ -13,7 +14,14 @@ A simple web application to download YouTube videos as MP3 audio files.
 ## Prerequisites
 
 - **Node.js** (v14 or higher)
+- **Python** and the **yt-dlp** command-line tool
 - **FFmpeg** (must be installed globally)
+
+Install yt-dlp with pip:
+
+```bash
+python -m pip install --user --upgrade yt-dlp
+```
 
 ### Installing FFmpeg
 
@@ -41,6 +49,11 @@ sudo apt install ffmpeg
    npm install
    ```
 
+  Also install yt-dlp if it is not already available:
+  ```bash
+  python -m pip install --user --upgrade yt-dlp
+  ```
+
 2. **Start the Server:**
    ```bash
    npm start
@@ -58,7 +71,7 @@ sudo apt install ffmpeg
 1. Copy a YouTube video URL (e.g., `https://www.youtube.com/watch?v=...`)
 2. Paste it into the input field
 3. Click "Check Info" to preview the video
-4. Click "Download MP3" to download the audio
+4. Choose MP3 audio or MP4 video (up to 1080p 60 fps), then click the download button
 
 ## Project Structure
 
